@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as React from "react";
 import { useWalletClient } from "wagmi";
 import { providers } from "ethers";
 
-export function walletClientToSigner(walletClient:any) {
+export function walletClientToSigner(walletClient: any): providers.JsonRpcSigner {
   const { account, chain, transport } = walletClient;
   const network = {
     chainId: chain.id,
