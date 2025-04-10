@@ -1,8 +1,9 @@
-import { type PublicClient, getPublicClient } from "wagmi";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { usePublicClient } from "wagmi";
 import { providers } from "ethers";
 import { type HttpTransport } from "viem";
 
-export function publicClientToProvider(publicClient: PublicClient) {
+export function publicClientToProvider(publicClient: any) {
   const { chain, transport } = publicClient;
   const network = {
     chainId: chain.id,
@@ -18,8 +19,8 @@ export function publicClientToProvider(publicClient: PublicClient) {
   return new providers.JsonRpcProvider(transport.url, network);
 }
 
-/** Action to convert a viem Public Client to an ethers.js Provider. */
-export function getEthersProvider({ chainId }: { chainId?: number } = {}) {
-  const publicClient = getPublicClient({ chainId });
+/** Custom hook to convert a viem Public Client to an ethers.js Provider. */
+export function useEthersProvider({ chainId }: { chainId?: number } = {}) {
+  const publicClient = usePublicClient({ chainId });
   return publicClientToProvider(publicClient);
 }
