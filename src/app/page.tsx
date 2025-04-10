@@ -3,7 +3,7 @@
 import { useRockPaperScissors } from "@/context/RockPaperScissorsContext";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { ethers } from "ethers";
-import { JSXElementConstructor, ReactElement, ReactNode, ReactPortal, useEffect } from "react";
+import { JSXElementConstructor, ReactElement, ReactNode, ReactPortal, useEffect, useState } from "react";
 import { useAccount } from "wagmi";
 
 export type GameOption = "rock" | "paper" | "scissors";
@@ -13,7 +13,6 @@ export default function RockPaperScissorsGame() {
     userChoice,
     computerChoice,
     result,
-    score,
     isLoading,
     txHash,
     entryFee,
@@ -23,6 +22,13 @@ export default function RockPaperScissorsGame() {
     checkGameStatus,
     resetOnChainGame
   } = useRockPaperScissors();
+  
+  // Add this to prevent hydration errors
+  const [isMounted, setIsMounted] = useState(false);
+  
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Check for existing games when component mounts or wallet connects
   useEffect(() => {
@@ -82,17 +88,36 @@ export default function RockPaperScissorsGame() {
     );
   };
 
+  // If not mounted yet, show a placeholder or loading state
+  if (!isMounted) {
+    return (
+      <div className="flex min-h-screen w-full flex-col items-center justify-center bg-gradient-to-b from-blue-50 to-indigo-100 p-4">
+        <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+          <div className="mb-6 flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-indigo-800">Rock Paper Scissors</h1>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-indigo-600">Loading...</span>
+            </div>
+          </div>
+          <div className="flex justify-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-indigo-300 border-t-indigo-600"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen w-full flex-col items-center justify-center bg-gradient-to-b from-blue-50 to-indigo-100 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-indigo-800">Rock Paper Scissors</h1>
           <div className="flex items-center gap-2">
-            <span className="font-medium text-indigo-600">Score: {score}</span>
             <ConnectButton />
           </div>
         </div>
 
+        {/* Only render this when client-side */}
         <div className="text-xs text-blue-800 font-bold mb-4">
           {address
             ? `Connected: ${address.slice(0, 5) + "..." + address.slice(-5)}`
@@ -190,17 +215,17 @@ export default function RockPaperScissorsGame() {
           </div>
         )}
 
-        {(result || userChoice) && (
-          <div className="flex justify-center">
-            <button
-              onClick={resetGame}
-              disabled={isLoading}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-white shadow-md transition-colors hover:bg-indigo-700 disabled:opacity-50"
-            >
-              Play Again
-            </button>
-          </div>
-        )}
+{(result || userChoice) && (
+  <div className="flex justify-center">
+    <button
+      onClick={resetGame}
+      disabled={isLoading}
+      className="rounded-lg bg-indigo-600 px-4 py-2 text-white shadow-md transition-colors hover:bg-indigo-700 disabled:opacity-50"
+    >
+      {isLoading ? "Resetting..." : "Play Again"}
+    </button>
+  </div>
+)}
 
         {!address && (
           <div className="mt-4 text-center text-sm text-red-500">

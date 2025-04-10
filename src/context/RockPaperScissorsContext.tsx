@@ -46,14 +46,14 @@ const contractToOption: Record<number, GameOption> = {
 // Context initialization
 const RockPaperScissorsContext = React.createContext<RockPaperScissorsContextProps | undefined>(undefined);
 
-const RockPaperScissorsProvider: React.FC<RockPaperScissorsProviderProps> = ({ 
-  children, 
-  contractAddress, 
-  contractAbi 
+const RockPaperScissorsProvider: React.FC<RockPaperScissorsProviderProps> = ({
+  children,
+  contractAddress,
+  contractAbi
 }) => {
   const { address, chain } = useAccount();
   const [activeChain, setActiveChainId] = useState<number | undefined>(chain?.id);
-  
+
   // Game state
   const [score, setScore] = useState<number>(0);
   const [userChoice, setUserChoice] = useState<GameOption | null>(null);
@@ -76,7 +76,7 @@ const RockPaperScissorsProvider: React.FC<RockPaperScissorsProviderProps> = ({
   const getContractInstance = React.useCallback(async (): Promise<Contract | undefined> => {
     try {
       if (!signer) return undefined;
-      
+
       const contractInstance = new ethers.Contract(
         contractAddress,
         contractAbi,
@@ -106,7 +106,7 @@ const RockPaperScissorsProvider: React.FC<RockPaperScissorsProviderProps> = ({
   // Check if a game is already in progress
   const checkGameInProgress = React.useCallback(async () => {
     if (!address) return false;
-    
+
     const contractInstance = await getContractInstance();
     if (!contractInstance) return false;
 
@@ -123,7 +123,7 @@ const RockPaperScissorsProvider: React.FC<RockPaperScissorsProviderProps> = ({
   // Function to check game status
   const checkGameStatus = async () => {
     if (!address) return;
-    
+
     setIsLoading(true);
     const contractInstance = await getContractInstance();
     if (!contractInstance) {
@@ -134,7 +134,7 @@ const RockPaperScissorsProvider: React.FC<RockPaperScissorsProviderProps> = ({
     try {
       // First check if game is in progress
       const hasActiveGame = await checkGameInProgress();
-      
+
       if (hasActiveGame) {
         // If there's an active game, get its status
         const status = await contractInstance.getGameStatus();
@@ -157,19 +157,54 @@ const RockPaperScissorsProvider: React.FC<RockPaperScissorsProviderProps> = ({
   };
 
   // Function to reset an active game on the contract
+  // Improved reset function with better error handling and state management
   const resetOnChainGame = async () => {
     const contractInstance = await getContractInstance();
     if (!contractInstance) return;
 
     setIsLoading(true);
     try {
-      const tx = await contractInstance.cancelGame();
-      await tx.wait();
-      
+      // First check if there's actually a game to cancel
+      const hasGame = await contractInstance.hasActiveGame(address);
+
+      if (hasGame) {
+        // If game exists, cancel it and wait for confirmation
+        const tx = await contractInstance.cancelGame();
+        console.log("Cancel game transaction sent:", tx.hash);
+
+        // Wait for transaction to be mined with at least 1 confirmation
+        const receipt = await tx.wait(1);
+        console.log("Game successfully cancelled, receipt:", receipt);
+
+        // Force a delay to ensure blockchain state is updated
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Double-check that game is now cancelled
+        const stillHasGame = await contractInstance.hasActiveGame(address);
+        if (stillHasGame) {
+          console.warn("Game still appears active after cancellation");
+        } else {
+          console.log("Game confirmed cancelled on chain");
+        }
+      } else {
+        console.log("No active game to cancel");
+      }
+
+      // Reset UI state regardless of blockchain state
       setGameInProgress(false);
-      resetGame();
+      setUserChoice(null);
+      setComputerChoice(null);
+      setResult(null);
+      setTxHash(null);
     } catch (error) {
       console.error("Error resetting game on chain:", error);
+
+      // Even if there's an error, try to reset the UI state
+      setGameInProgress(false);
+      setUserChoice(null);
+      setComputerChoice(null);
+      setResult(null);
+      setTxHash(null);
     } finally {
       setIsLoading(false);
     }
@@ -187,25 +222,25 @@ const RockPaperScissorsProvider: React.FC<RockPaperScissorsProviderProps> = ({
     try {
       // Check if there's already a game in progress
       const hasActiveGame = await checkGameInProgress();
-      
+
       if (hasActiveGame) {
         console.log("Game already in progress, getting current status");
         await checkGameStatus();
         return;
       }
-      
+
       const fee = entryFee ? ethers.BigNumber.from(entryFee) : ethers.BigNumber.from(0);
       const tx = await contractInstance.play(choice, {
         value: fee,
         from: address
       });
-      
+
       setTxHash(tx.hash);
-      
+
       // Wait for transaction to be mined
       const receipt = await tx.wait();
       console.log("Game played successfully:", receipt);
-      
+
       // Get game status after transaction is confirmed
       await checkGameStatus();
     } catch (error) {
@@ -219,12 +254,12 @@ const RockPaperScissorsProvider: React.FC<RockPaperScissorsProviderProps> = ({
   // Initialize contract data when signer is available
   useEffect(() => {
     if (!signer || !address) return;
-    
+
     const initializeContract = async () => {
       await getEntryFee();
       await checkGameInProgress();
     };
-    
+
     initializeContract();
   }, [getEntryFee, checkGameInProgress, signer, address]);
 
@@ -274,6 +309,10 @@ const RockPaperScissorsProvider: React.FC<RockPaperScissorsProviderProps> = ({
           setResult("YOU LOSE");
           updateScore(false);
         }
+
+        // Once we've processed a complete game with a result,
+        // we should consider the blockchain game as no longer in progress
+        setGameInProgress(false);
       }
     } catch (error) {
       console.error("Error processing game result:", error);
@@ -291,33 +330,53 @@ const RockPaperScissorsProvider: React.FC<RockPaperScissorsProviderProps> = ({
     setUserChoice(choice);
 
     try {
-      // Check if there's already a game in progress
+      // First check if there's already a game in progress
       const hasActiveGame = await checkGameInProgress();
-      
+
       if (hasActiveGame) {
-        // If there's an active game, show an alert or handle accordingly
-        console.log("You already have a game in progress");
-        await checkGameStatus();
-        setIsLoading(false);
-        return;
+        // If there's an active game, cancel it first
+        await resetOnChainGame();
+        // Small delay to ensure blockchain state is updated
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      
-      // Convert choice to contract value
+
+      // Convert choice to contract value and start new game
       const contractChoice = optionToContract[choice];
       await playGameOnChain(contractChoice);
     } catch (error) {
       console.error("Error handling game choice:", error);
-      resetGame();
+      // Reset UI state but don't trigger another blockchain operation
+      setUserChoice(null);
+      setComputerChoice(null);
+      setResult(null);
+      setTxHash(null);
       setIsLoading(false);
     }
   };
 
-  const resetGame = () => {
-    setUserChoice(null);
-    setComputerChoice(null);
-    setResult(null);
-    setTxHash(null);
+  const resetGame = async () => {
+    try {
+      if (gameInProgress) {
+        // If there's a game in progress, use our improved reset function
+        await resetOnChainGame();
+      } else {
+        // If no game in progress, just reset UI state
+        setUserChoice(null);
+        setComputerChoice(null);
+        setResult(null);
+        setTxHash(null);
+      }
+    } catch (error) {
+      console.error("Error in resetGame:", error);
+      // Reset UI state regardless of errors
+      setUserChoice(null);
+      setComputerChoice(null);
+      setResult(null);
+      setTxHash(null);
+      setGameInProgress(false);
+    }
   };
+
 
   return (
     <RockPaperScissorsContext.Provider
